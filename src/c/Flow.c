@@ -11,6 +11,7 @@ static char s_time_text[6];
 static GColor s_background_color;
 static GColor s_foreground_color;
 static int s_theme;
+static int s_time_format;
 
 enum {
   kLineWidth = 2,
@@ -38,6 +39,7 @@ enum {
 
 enum {
   PERSIST_KEY_THEME = 1,
+  PERSIST_KEY_TIME_FORMAT = 2,
 };
 
 typedef struct {
@@ -47,16 +49,16 @@ typedef struct {
 static const DigitGlyph s_digit_glyphs[] = {
   // 0
   { .rows = {
-      "01111110",
-      "11000011",
-      "11000011",
-      "11000011",
-      "11000011",
-      "11000011",
-      "11000011",
-      "11000011",
-      "11000011",
-      "01111110",
+      "0011100",
+      "0111110",
+      "0110110",
+      "0110110",
+      "0110110",
+      "0110110",
+      "0110110",
+      "0110110",
+      "0111110",
+      "0011100",
     } },
   // 1
   { .rows = {
@@ -86,16 +88,16 @@ static const DigitGlyph s_digit_glyphs[] = {
     } },
   // 3
   { .rows = {
-      "0111110",
-      "1111111",
+      "0111100",
+      "1111110",
       "1100011",
       "0000011",
-      "0011110",
-      "0011110",
+      "0011100",
+      "0011100",
       "0000011",
       "1100011",
-      "1111111",
-      "0111110",
+      "1111110",
+      "0111100",
     } },
   // 4
   { .rows = {
@@ -119,7 +121,7 @@ static const DigitGlyph s_digit_glyphs[] = {
       "1111100",
       "0011111",
       "0000011",
-      "1010011",
+      "1100011",
       "1111111",
       "0111110",
     } },
@@ -177,24 +179,27 @@ static const DigitGlyph s_digit_glyphs[] = {
     } },
   // :
   { .rows = {
-      "00",
-      "00",
-      "11",
-      "11",
-      "00",
-      "00",
-      "00",
-      "00",
-      "11",
-      "11",
+      "0000",
+      "0000",
+      "0110",
+      "0110",
+      "0000",
+      "0000",
+      "0000",
+      "0000",
+      "0110",
+      "0110",
     } },
 };
 
 static void prv_update_time(struct tm *tick_time) {
-  if (clock_is_24h_style()) {
+  if (s_time_format == 0) {
     strftime(s_time_text, sizeof(s_time_text), "%H:%M", tick_time);
   } else {
     strftime(s_time_text, sizeof(s_time_text), "%I:%M", tick_time);
+    if (s_time_text[0] == '0') {
+      memmove(s_time_text, s_time_text + 1, sizeof(s_time_text) - 1);
+    }
   }
 }
 
@@ -266,38 +271,67 @@ static void send_theme_to_phone(void) {
   app_message_outbox_send();
 }
 
+static void send_time_format_to_phone(void) {
+  DictionaryIterator *iter = NULL;
+  if (app_message_outbox_begin(&iter) != APP_MSG_OK || !iter) {
+    return;
+  }
+  dict_write_int(iter, MESSAGE_KEY_time_format, &s_time_format, sizeof(s_time_format), true);
+  app_message_outbox_send();
+}
+
+static int prv_tuple_to_int(const Tuple *tuple) {
+  if (tuple->type == TUPLE_CSTRING) {
+    return atoi(tuple->value->cstring);
+  } else if (tuple->type == TUPLE_UINT) {
+    return (int)tuple->value->uint32;
+  }
+  return (int)tuple->value->int32;
+}
+
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *theme_tuple = dict_find(iter, MESSAGE_KEY_theme);
   Tuple *theme_request_tuple = dict_find(iter, MESSAGE_KEY_theme_request);
+  Tuple *time_format_tuple = dict_find(iter, MESSAGE_KEY_time_format);
+  Tuple *time_format_request_tuple = dict_find(iter, MESSAGE_KEY_time_format_request);
   if (theme_request_tuple) {
     send_theme_to_phone();
   }
-  if (!theme_tuple) {
-    return;
+  if (time_format_request_tuple) {
+    send_time_format_to_phone();
   }
 
-  int new_theme = s_theme;
-  if (theme_tuple->type == TUPLE_CSTRING) {
-    new_theme = atoi(theme_tuple->value->cstring);
-  } else if (theme_tuple->type == TUPLE_UINT) {
-    new_theme = (int)theme_tuple->value->uint32;
-  } else {
-    new_theme = (int)theme_tuple->value->int32;
-  }
-
+  if (theme_tuple) {
+    int new_theme = prv_tuple_to_int(theme_tuple);
 #ifdef PBL_COLOR
-  if (new_theme >= THEME_DARK && new_theme <= THEME_DUSK) {
-    s_theme = new_theme;
-  }
+    if (new_theme >= THEME_DARK && new_theme <= THEME_DUSK) {
+      s_theme = new_theme;
+    }
 #else
-  if (new_theme == THEME_DARK || new_theme == THEME_LIGHT) {
-    s_theme = new_theme;
-  }
+    if (new_theme == THEME_DARK || new_theme == THEME_LIGHT) {
+      s_theme = new_theme;
+    }
 #endif
 
-  persist_write_int(PERSIST_KEY_THEME, s_theme);
-  apply_theme();
-  send_theme_to_phone();
+    persist_write_int(PERSIST_KEY_THEME, s_theme);
+    apply_theme();
+    send_theme_to_phone();
+  }
+
+  if (time_format_tuple) {
+    int new_time_format = prv_tuple_to_int(time_format_tuple);
+    if (new_time_format == 0 || new_time_format == 1) {
+      s_time_format = new_time_format;
+    }
+    persist_write_int(PERSIST_KEY_TIME_FORMAT, s_time_format);
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    prv_update_time(t);
+    if (s_canvas_layer) {
+      layer_mark_dirty(s_canvas_layer);
+    }
+    send_time_format_to_phone();
+  }
 }
 
 static int prv_glyph_index(char ch) {
@@ -374,7 +408,7 @@ static void prv_canvas_update_proc(Layer *layer, GContext *ctx) {
   const int16_t origin_x = (bounds.size.w - total_width) / 2;
   const int16_t origin_y = (bounds.size.h - total_height) / 2;
 
-  graphics_context_set_fill_color(ctx, s_foreground_color);
+  graphics_context_set_fill_color(ctx, s_background_color);
   int16_t cursor_x = origin_x;
   for (size_t i = 0; i < time_len; i++) {
     const int glyph_index = prv_glyph_index(s_time_text[i]);
@@ -444,6 +478,10 @@ static void prv_init(void) {
   if (persist_exists(PERSIST_KEY_THEME)) {
     s_theme = persist_read_int(PERSIST_KEY_THEME);
   }
+  s_time_format = clock_is_24h_style() ? 0 : 1;
+  if (persist_exists(PERSIST_KEY_TIME_FORMAT)) {
+    s_time_format = persist_read_int(PERSIST_KEY_TIME_FORMAT);
+  }
 
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers) {
@@ -457,6 +495,7 @@ static void prv_init(void) {
   app_message_register_inbox_received(inbox_received_handler);
   app_message_open(64, 64);
   send_theme_to_phone();
+  send_time_format_to_phone();
 
   tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
 }

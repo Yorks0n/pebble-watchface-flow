@@ -23,7 +23,9 @@
     },
     "messageKeys": [
       "theme",
-      "theme_request"
+      "theme_request",
+      "time_format",
+      "time_format_request"
     ],
     "resources": {
       "media": []

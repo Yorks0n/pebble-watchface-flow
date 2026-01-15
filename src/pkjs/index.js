@@ -44,6 +44,25 @@ var clayConfig = [
     ]
   },
   {
+    type: 'section',
+    items: [
+      {
+        type: 'heading',
+        defaultValue: 'Time'
+      },
+      {
+        type: 'select',
+        messageKey: 'time_format',
+        label: 'Time format',
+        defaultValue: 0,
+        options: [
+          { value: 0, label: '24-hour' },
+          { value: 1, label: '12-hour' }
+        ]
+      }
+    ]
+  },
+  {
     type: 'submit',
     defaultValue: 'Save'
   }
@@ -68,7 +87,7 @@ function requestThemeAndOpen() {
     openConfig();
   }, 800);
 
-  Pebble.sendAppMessage({ theme_request: 1 }, function() {}, function() {});
+  Pebble.sendAppMessage({ theme_request: 1, time_format_request: 1 }, function() {}, function() {});
 }
 
 Pebble.addEventListener('showConfiguration', function() {
@@ -83,10 +102,19 @@ Pebble.addEventListener('webviewclosed', function(e) {
 });
 
 Pebble.addEventListener('appmessage', function(e) {
-  if (!e || !e.payload || typeof e.payload.theme === 'undefined') {
+  if (!e || !e.payload) {
     return;
   }
-  clay.setSettings({ theme: e.payload.theme });
+  var nextSettings = {};
+  if (typeof e.payload.theme !== 'undefined') {
+    nextSettings.theme = e.payload.theme;
+  }
+  if (typeof e.payload.time_format !== 'undefined') {
+    nextSettings.time_format = e.payload.time_format;
+  }
+  if (Object.keys(nextSettings).length > 0) {
+    clay.setSettings(nextSettings);
+  }
   if (pendingConfig) {
     pendingConfig = false;
     if (pendingTimer) {
