@@ -1,15 +1,24 @@
 #include <pebble.h>
+#include <stdlib.h>
+#include <string.h>
+#include "message_keys.auto.h"
 
 static Window *s_window;
 static Layer *s_canvas_layer;
 static AppTimer *s_timer;
 static int32_t s_phase;
+static char s_time_text[6];
+static GColor s_background_color;
+static GColor s_foreground_color;
+static int s_theme;
 
 enum {
   kLineWidth = 2,
   kGap = 4,
   kFps = 15,
-  kSpatialPeriodMultiplier = 2
+  kSpatialPeriodMultiplier = 2,
+  kGlyphRows = 10,
+  kGlyphSpacing = 1
 };
 
 static int16_t s_line_count;
@@ -18,19 +27,304 @@ static int16_t s_base_len;
 static int32_t s_top_phase_offset;
 static int32_t s_bottom_phase_offset;
 
+enum {
+  THEME_DARK = 0,
+  THEME_LIGHT = 1,
+  THEME_WARM = 2,
+  THEME_NATURAL = 3,
+  THEME_COOL = 4,
+  THEME_DUSK = 5,
+};
+
+enum {
+  PERSIST_KEY_THEME = 1,
+};
+
+typedef struct {
+  const char *rows[kGlyphRows];
+} DigitGlyph;
+
+static const DigitGlyph s_digit_glyphs[] = {
+  // 0
+  { .rows = {
+      "01111110",
+      "11000011",
+      "11000011",
+      "11000011",
+      "11000011",
+      "11000011",
+      "11000011",
+      "11000011",
+      "11000011",
+      "01111110",
+    } },
+  // 1
+  { .rows = {
+      "0011100",
+      "0011100",
+      "0001100",
+      "0001100",
+      "0001100",
+      "0001100",
+      "0001100",
+      "0001100",
+      "0001100",
+      "0001100",
+    } },
+  // 2
+  { .rows = {
+      "0111110",
+      "1111111",
+      "1100011",
+      "0000111",
+      "0001110",
+      "0011100",
+      "0111000",
+      "1110000",
+      "1111111",
+      "1111111",
+    } },
+  // 3
+  { .rows = {
+      "0111110",
+      "1111111",
+      "1100011",
+      "0000011",
+      "0011110",
+      "0011110",
+      "0000011",
+      "1100011",
+      "1111111",
+      "0111110",
+    } },
+  // 4
+  { .rows = {
+      "0000110",
+      "0001110",
+      "0011110",
+      "0110110",
+      "1100110",
+      "1100110",
+      "1111111",
+      "1111111",
+      "0000110",
+      "0000110",
+    } },
+  // 5
+  { .rows = {
+      "1111111",
+      "1111111",
+      "1100000",
+      "1100000",
+      "1111100",
+      "0011111",
+      "0000011",
+      "1010011",
+      "1111111",
+      "0111110",
+    } },
+  // 6
+  { .rows = {
+      "0111110",
+      "1111111",
+      "1100011",
+      "1100000",
+      "1111110",
+      "1111111",
+      "1100011",
+      "1100011",
+      "1111111",
+      "0111110",
+    } },
+  // 7
+  { .rows = {
+      "1111111",
+      "1111111",
+      "0000011",
+      "0000011",
+      "0000111",
+      "0001110",
+      "0001110",
+      "0001100",
+      "0001100",
+      "0001100",
+    } },
+  // 8
+  { .rows = {
+      "0111110",
+      "1111111",
+      "1100011",
+      "1100011",
+      "0111110",
+      "1111111",
+      "1100011",
+      "1100011",
+      "1111111",
+      "0111110",
+    } },
+  // 9
+  { .rows = {
+      "0111110",
+      "1111111",
+      "1100011",
+      "1100011",
+      "1111111",
+      "0111111",
+      "0000011",
+      "1100011",
+      "1111111",
+      "0111110",
+    } },
+  // :
+  { .rows = {
+      "00",
+      "00",
+      "11",
+      "11",
+      "00",
+      "00",
+      "00",
+      "00",
+      "11",
+      "11",
+    } },
+};
+
+static void prv_update_time(struct tm *tick_time) {
+  if (clock_is_24h_style()) {
+    strftime(s_time_text, sizeof(s_time_text), "%H:%M", tick_time);
+  } else {
+    strftime(s_time_text, sizeof(s_time_text), "%I:%M", tick_time);
+  }
+}
+
+static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
+  prv_update_time(tick_time);
+  layer_mark_dirty(s_canvas_layer);
+}
+
 static void prv_tick(void *context);
+
+static void apply_theme(void) {
+  if (s_theme < THEME_DARK || s_theme > THEME_DUSK) {
+    s_theme = THEME_DARK;
+  }
+
+#ifdef PBL_COLOR
+  switch (s_theme) {
+    case THEME_LIGHT:
+      s_background_color = GColorWhite;
+      s_foreground_color = GColorBlack;
+      break;
+    case THEME_WARM:
+      s_background_color = GColorOrange;
+      s_foreground_color = GColorPastelYellow;
+      break;
+    case THEME_NATURAL:
+      s_background_color = GColorDarkGreen;
+      s_foreground_color = GColorMintGreen;
+      break;
+    case THEME_COOL:
+      s_background_color = GColorDukeBlue;
+      s_foreground_color = GColorCeleste;
+      break;
+    case THEME_DUSK:
+      s_background_color = GColorImperialPurple;
+      s_foreground_color = GColorRichBrilliantLavender;
+      break;
+    case THEME_DARK:
+    default:
+      s_background_color = GColorBlack;
+      s_foreground_color = GColorWhite;
+      break;
+  }
+#else
+  if (s_theme > THEME_LIGHT) {
+    s_theme = THEME_DARK;
+  }
+  if (s_theme == THEME_LIGHT) {
+    s_background_color = GColorWhite;
+    s_foreground_color = GColorBlack;
+  } else {
+    s_background_color = GColorBlack;
+    s_foreground_color = GColorWhite;
+  }
+#endif
+
+  window_set_background_color(s_window, s_background_color);
+  if (s_canvas_layer) {
+    layer_mark_dirty(s_canvas_layer);
+  }
+}
+
+static void send_theme_to_phone(void) {
+  DictionaryIterator *iter = NULL;
+  if (app_message_outbox_begin(&iter) != APP_MSG_OK || !iter) {
+    return;
+  }
+  dict_write_int(iter, MESSAGE_KEY_theme, &s_theme, sizeof(s_theme), true);
+  app_message_outbox_send();
+}
+
+static void inbox_received_handler(DictionaryIterator *iter, void *context) {
+  Tuple *theme_tuple = dict_find(iter, MESSAGE_KEY_theme);
+  Tuple *theme_request_tuple = dict_find(iter, MESSAGE_KEY_theme_request);
+  if (theme_request_tuple) {
+    send_theme_to_phone();
+  }
+  if (!theme_tuple) {
+    return;
+  }
+
+  int new_theme = s_theme;
+  if (theme_tuple->type == TUPLE_CSTRING) {
+    new_theme = atoi(theme_tuple->value->cstring);
+  } else if (theme_tuple->type == TUPLE_UINT) {
+    new_theme = (int)theme_tuple->value->uint32;
+  } else {
+    new_theme = (int)theme_tuple->value->int32;
+  }
+
+#ifdef PBL_COLOR
+  if (new_theme >= THEME_DARK && new_theme <= THEME_DUSK) {
+    s_theme = new_theme;
+  }
+#else
+  if (new_theme == THEME_DARK || new_theme == THEME_LIGHT) {
+    s_theme = new_theme;
+  }
+#endif
+
+  persist_write_int(PERSIST_KEY_THEME, s_theme);
+  apply_theme();
+  send_theme_to_phone();
+}
+
+static int prv_glyph_index(char ch) {
+  if (ch >= '0' && ch <= '9') {
+    return ch - '0';
+  }
+  if (ch == ':') {
+    return 10;
+  }
+  return -1;
+}
+
+static int16_t prv_glyph_width(const DigitGlyph *glyph) {
+  return (int16_t)strlen(glyph->rows[0]);
+}
 
 static void prv_canvas_update_proc(Layer *layer, GContext *ctx) {
   const GRect bounds = layer_get_bounds(layer);
-  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_context_set_fill_color(ctx, s_background_color);
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, s_foreground_color);
 
   const int16_t step = kLineWidth + kGap;
 
   for (int16_t i = 0; i < s_line_count; i++) {
-    const int16_t x = i * step;
+    const int16_t x = i * step + 2;
     const int32_t spatial_phase = (TRIG_MAX_ANGLE * (int32_t)x) /
       ((int32_t)bounds.size.w * kSpatialPeriodMultiplier);
     const bool is_top = (i % 2 == 0);
@@ -60,6 +354,48 @@ static void prv_canvas_update_proc(Layer *layer, GContext *ctx) {
       graphics_fill_rect(ctx, GRect(x, bounds.size.h - length, kLineWidth, length), 0, GCornerNone);
     }
   }
+
+  int16_t total_blocks = 0;
+  const size_t time_len = strlen(s_time_text);
+  for (size_t i = 0; i < time_len; i++) {
+    const int glyph_index = prv_glyph_index(s_time_text[i]);
+    if (glyph_index < 0) {
+      continue;
+    }
+    total_blocks += prv_glyph_width(&s_digit_glyphs[glyph_index]);
+    if (i + 1 < time_len) {
+      total_blocks += kGlyphSpacing;
+    }
+  }
+
+  const int16_t block_size = bounds.size.w > 190 ? 5 : 4;
+  const int16_t total_width = total_blocks * block_size;
+  const int16_t total_height = kGlyphRows * block_size;
+  const int16_t origin_x = (bounds.size.w - total_width) / 2;
+  const int16_t origin_y = (bounds.size.h - total_height) / 2;
+
+  graphics_context_set_fill_color(ctx, s_foreground_color);
+  int16_t cursor_x = origin_x;
+  for (size_t i = 0; i < time_len; i++) {
+    const int glyph_index = prv_glyph_index(s_time_text[i]);
+    if (glyph_index < 0) {
+      continue;
+    }
+    const DigitGlyph *glyph = &s_digit_glyphs[glyph_index];
+    const int16_t glyph_width = prv_glyph_width(glyph);
+
+    for (int16_t row = 0; row < kGlyphRows; row++) {
+      for (int16_t col = 0; col < glyph_width; col++) {
+        if (glyph->rows[row][col] == '1') {
+          const int16_t px = cursor_x + col * block_size;
+          const int16_t py = origin_y + row * block_size;
+          graphics_fill_rect(ctx, GRect(px, py, block_size, block_size),
+                             0, GCornerNone);
+        }
+      }
+    }
+    cursor_x += (glyph_width + kGlyphSpacing) * block_size;
+  }
 }
 
 static void prv_tick(void *context) {
@@ -88,6 +424,11 @@ static void prv_window_load(Window *window) {
   s_top_phase_offset = 0;
   s_bottom_phase_offset = TRIG_MAX_ANGLE / 4;
   s_timer = app_timer_register(1000 / kFps, prv_tick, NULL);
+
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+  prv_update_time(t);
+  layer_mark_dirty(s_canvas_layer);
 }
 
 static void prv_window_unload(Window *window) {
@@ -99,6 +440,11 @@ static void prv_window_unload(Window *window) {
 }
 
 static void prv_init(void) {
+  s_theme = THEME_DARK;
+  if (persist_exists(PERSIST_KEY_THEME)) {
+    s_theme = persist_read_int(PERSIST_KEY_THEME);
+  }
+
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers) {
     .load = prv_window_load,
@@ -106,9 +452,17 @@ static void prv_init(void) {
   });
   const bool animated = true;
   window_stack_push(s_window, animated);
+
+  apply_theme();
+  app_message_register_inbox_received(inbox_received_handler);
+  app_message_open(64, 64);
+  send_theme_to_phone();
+
+  tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
 }
 
 static void prv_deinit(void) {
+  tick_timer_service_unsubscribe();
   window_destroy(s_window);
 }
 

@@ -22,7 +22,8 @@
       "watchface": false
     },
     "messageKeys": [
-      "dummy"
+      "theme",
+      "theme_request"
     ],
     "resources": {
       "media": []

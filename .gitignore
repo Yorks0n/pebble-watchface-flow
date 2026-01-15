@@ -8,5 +8,5 @@ build/
 *.d
 *.png
 *.log
-.cursor/rules/pebble.mdc
+.cursor
 CLAUDE.md
