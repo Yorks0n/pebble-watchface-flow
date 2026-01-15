@@ -63,6 +63,40 @@ var clayConfig = [
     ]
   },
   {
+    type: 'section',
+    items: [
+      {
+        type: 'heading',
+        defaultValue: 'Animation'
+      },
+      {
+        type: 'select',
+        messageKey: 'animation_frequency',
+        label: 'Trigger frequency',
+        defaultValue: 1,
+        options: [
+          { value: 0, label: 'Off' },
+          { value: 1, label: 'Every minute' },
+          { value: 2, label: 'Every 15 minutes' },
+          { value: 3, label: 'Every 30 minutes' },
+          { value: 4, label: 'Every hour' },
+          { value: 5, label: 'Always on' }
+        ]
+      },
+      {
+        type: 'select',
+        messageKey: 'animation_duration',
+        label: 'Animation duration',
+        defaultValue: 2,
+        options: [
+          { value: 1, label: '1 second' },
+          { value: 2, label: '2 seconds' },
+          { value: 3, label: '3 seconds' }
+        ]
+      }
+    ]
+  },
+  {
     type: 'submit',
     defaultValue: 'Save'
   }
@@ -87,7 +121,12 @@ function requestThemeAndOpen() {
     openConfig();
   }, 800);
 
-  Pebble.sendAppMessage({ theme_request: 1, time_format_request: 1 }, function() {}, function() {});
+  Pebble.sendAppMessage({
+    theme_request: 1,
+    time_format_request: 1,
+    animation_frequency_request: 1,
+    animation_duration_request: 1
+  }, function() {}, function() {});
 }
 
 Pebble.addEventListener('showConfiguration', function() {
@@ -111,6 +150,12 @@ Pebble.addEventListener('appmessage', function(e) {
   }
   if (typeof e.payload.time_format !== 'undefined') {
     nextSettings.time_format = e.payload.time_format;
+  }
+  if (typeof e.payload.animation_frequency !== 'undefined') {
+    nextSettings.animation_frequency = e.payload.animation_frequency;
+  }
+  if (typeof e.payload.animation_duration !== 'undefined') {
+    nextSettings.animation_duration = e.payload.animation_duration;
   }
   if (Object.keys(nextSettings).length > 0) {
     clay.setSettings(nextSettings);

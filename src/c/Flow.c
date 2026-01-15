@@ -12,6 +12,13 @@ static GColor s_background_color;
 static GColor s_foreground_color;
 static int s_theme;
 static int s_time_format;
+static int s_animation_frequency;
+static int s_animation_duration_sec;
+static int16_t s_animation_frames_remaining;
+
+static void prv_tick(void *context);
+static void prv_start_animation(void);
+static void prv_stop_animation(void);
 
 enum {
   kLineWidth = 2,
@@ -38,8 +45,19 @@ enum {
 };
 
 enum {
+  ANIM_FREQ_OFF = 0,
+  ANIM_FREQ_EVERY_MINUTE = 1,
+  ANIM_FREQ_EVERY_15_MINUTES = 2,
+  ANIM_FREQ_EVERY_30_MINUTES = 3,
+  ANIM_FREQ_EVERY_HOUR = 4,
+  ANIM_FREQ_ALWAYS_ON = 5,
+};
+
+enum {
   PERSIST_KEY_THEME = 1,
   PERSIST_KEY_TIME_FORMAT = 2,
+  PERSIST_KEY_ANIM_FREQUENCY = 3,
+  PERSIST_KEY_ANIM_DURATION = 4,
 };
 
 typedef struct {
@@ -49,16 +67,16 @@ typedef struct {
 static const DigitGlyph s_digit_glyphs[] = {
   // 0
   { .rows = {
-      "0011100",
-      "0111110",
-      "0110110",
-      "0110110",
-      "0110110",
-      "0110110",
-      "0110110",
-      "0110110",
-      "0111110",
-      "0011100",
+      "0111100",
+      "1111110",
+      "1100110",
+      "1100110",
+      "1100110",
+      "1100110",
+      "1100110",
+      "1100110",
+      "1111110",
+      "0111100",
     } },
   // 1
   { .rows = {
@@ -206,9 +224,43 @@ static void prv_update_time(struct tm *tick_time) {
 static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   prv_update_time(tick_time);
   layer_mark_dirty(s_canvas_layer);
-}
 
-static void prv_tick(void *context);
+  if (s_animation_frequency == ANIM_FREQ_OFF) {
+    return;
+  }
+  if (s_animation_frequency == ANIM_FREQ_ALWAYS_ON) {
+    prv_start_animation();
+    return;
+  }
+
+  const int minute = tick_time->tm_min;
+  bool should_trigger = false;
+  switch (s_animation_frequency) {
+    case ANIM_FREQ_EVERY_MINUTE:
+      should_trigger = true;
+      break;
+    case ANIM_FREQ_EVERY_15_MINUTES:
+      should_trigger = (minute % 15 == 0);
+      break;
+    case ANIM_FREQ_EVERY_30_MINUTES:
+      should_trigger = (minute % 30 == 0);
+      break;
+    case ANIM_FREQ_EVERY_HOUR:
+      should_trigger = (minute == 0);
+      break;
+    case ANIM_FREQ_ALWAYS_ON:
+      should_trigger = true;
+      break;
+    case ANIM_FREQ_OFF:
+    default:
+      should_trigger = false;
+      break;
+  }
+
+  if (should_trigger) {
+    prv_start_animation();
+  }
+}
 
 static void apply_theme(void) {
   if (s_theme < THEME_DARK || s_theme > THEME_DUSK) {
@@ -269,6 +321,10 @@ static void send_settings_to_phone(void) {
   }
   dict_write_int(iter, MESSAGE_KEY_theme, &s_theme, sizeof(s_theme), true);
   dict_write_int(iter, MESSAGE_KEY_time_format, &s_time_format, sizeof(s_time_format), true);
+  dict_write_int(iter, MESSAGE_KEY_animation_frequency, &s_animation_frequency,
+                 sizeof(s_animation_frequency), true);
+  dict_write_int(iter, MESSAGE_KEY_animation_duration, &s_animation_duration_sec,
+                 sizeof(s_animation_duration_sec), true);
   app_message_outbox_send();
 }
 
@@ -286,9 +342,15 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *theme_request_tuple = dict_find(iter, MESSAGE_KEY_theme_request);
   Tuple *time_format_tuple = dict_find(iter, MESSAGE_KEY_time_format);
   Tuple *time_format_request_tuple = dict_find(iter, MESSAGE_KEY_time_format_request);
-  const bool requested = theme_request_tuple || time_format_request_tuple;
+  Tuple *anim_frequency_tuple = dict_find(iter, MESSAGE_KEY_animation_frequency);
+  Tuple *anim_frequency_request_tuple = dict_find(iter, MESSAGE_KEY_animation_frequency_request);
+  Tuple *anim_duration_tuple = dict_find(iter, MESSAGE_KEY_animation_duration);
+  Tuple *anim_duration_request_tuple = dict_find(iter, MESSAGE_KEY_animation_duration_request);
+  const bool requested = theme_request_tuple || time_format_request_tuple ||
+    anim_frequency_request_tuple || anim_duration_request_tuple;
   bool did_update_theme = false;
   bool did_update_time_format = false;
+  bool did_update_animation = false;
 
   if (theme_tuple) {
     int new_theme = prv_tuple_to_int(theme_tuple);
@@ -322,7 +384,33 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     did_update_time_format = true;
   }
 
-  if (requested || did_update_theme || did_update_time_format) {
+  if (anim_frequency_tuple) {
+    int new_frequency = prv_tuple_to_int(anim_frequency_tuple);
+    if (new_frequency >= ANIM_FREQ_OFF && new_frequency <= ANIM_FREQ_ALWAYS_ON) {
+      s_animation_frequency = new_frequency;
+    }
+    persist_write_int(PERSIST_KEY_ANIM_FREQUENCY, s_animation_frequency);
+    if (s_animation_frequency == ANIM_FREQ_OFF) {
+      prv_stop_animation();
+    } else if (s_animation_frequency == ANIM_FREQ_ALWAYS_ON) {
+      prv_start_animation();
+    }
+    did_update_animation = true;
+  }
+
+  if (anim_duration_tuple) {
+    int new_duration = prv_tuple_to_int(anim_duration_tuple);
+    if (new_duration >= 1 && new_duration <= 3) {
+      s_animation_duration_sec = new_duration;
+    }
+    persist_write_int(PERSIST_KEY_ANIM_DURATION, s_animation_duration_sec);
+    if (s_animation_frames_remaining > 0) {
+      s_animation_frames_remaining = s_animation_duration_sec * kFps;
+    }
+    did_update_animation = true;
+  }
+
+  if (requested || did_update_theme || did_update_time_format || did_update_animation) {
     send_settings_to_phone();
   }
 }
@@ -426,13 +514,47 @@ static void prv_canvas_update_proc(Layer *layer, GContext *ctx) {
 }
 
 static void prv_tick(void *context) {
+  if (s_animation_frames_remaining == 0) {
+    s_timer = NULL;
+    return;
+  }
+
   s_phase += TRIG_MAX_ANGLE / 64;
   if (s_phase >= TRIG_MAX_ANGLE) {
     s_phase -= TRIG_MAX_ANGLE;
   }
 
   layer_mark_dirty(s_canvas_layer);
-  s_timer = app_timer_register(1000 / kFps, prv_tick, NULL);
+  if (s_animation_frames_remaining > 0) {
+    s_animation_frames_remaining--;
+  }
+  if (s_animation_frames_remaining != 0) {
+    s_timer = app_timer_register(1000 / kFps, prv_tick, NULL);
+  } else {
+    s_timer = NULL;
+  }
+}
+
+static void prv_start_animation(void) {
+  if (s_animation_duration_sec <= 0 && s_animation_frequency != ANIM_FREQ_ALWAYS_ON) {
+    return;
+  }
+  if (s_animation_frequency == ANIM_FREQ_ALWAYS_ON) {
+    s_animation_frames_remaining = -1;
+  } else {
+    s_animation_frames_remaining = s_animation_duration_sec * kFps;
+  }
+  if (!s_timer) {
+    s_timer = app_timer_register(1000 / kFps, prv_tick, NULL);
+  }
+}
+
+static void prv_stop_animation(void) {
+  s_animation_frames_remaining = 0;
+  if (s_timer) {
+    app_timer_cancel(s_timer);
+    s_timer = NULL;
+  }
 }
 
 static void prv_window_load(Window *window) {
@@ -450,12 +572,14 @@ static void prv_window_load(Window *window) {
   s_phase = 0;
   s_top_phase_offset = 0;
   s_bottom_phase_offset = TRIG_MAX_ANGLE / 4;
-  s_timer = app_timer_register(1000 / kFps, prv_tick, NULL);
 
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
   prv_update_time(t);
   layer_mark_dirty(s_canvas_layer);
+  if (s_animation_frequency == ANIM_FREQ_ALWAYS_ON) {
+    prv_start_animation();
+  }
 }
 
 static void prv_window_unload(Window *window) {
@@ -475,6 +599,21 @@ static void prv_init(void) {
   if (persist_exists(PERSIST_KEY_TIME_FORMAT)) {
     s_time_format = persist_read_int(PERSIST_KEY_TIME_FORMAT);
   }
+  s_animation_frequency = ANIM_FREQ_EVERY_MINUTE;
+  if (persist_exists(PERSIST_KEY_ANIM_FREQUENCY)) {
+    s_animation_frequency = persist_read_int(PERSIST_KEY_ANIM_FREQUENCY);
+  }
+  if (s_animation_frequency < ANIM_FREQ_OFF || s_animation_frequency > ANIM_FREQ_ALWAYS_ON) {
+    s_animation_frequency = ANIM_FREQ_EVERY_MINUTE;
+  }
+  s_animation_duration_sec = 2;
+  if (persist_exists(PERSIST_KEY_ANIM_DURATION)) {
+    s_animation_duration_sec = persist_read_int(PERSIST_KEY_ANIM_DURATION);
+  }
+  if (s_animation_duration_sec < 1 || s_animation_duration_sec > 3) {
+    s_animation_duration_sec = 2;
+  }
+  s_animation_frames_remaining = 0;
 
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers) {

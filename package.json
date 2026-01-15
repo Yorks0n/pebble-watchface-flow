@@ -25,7 +25,11 @@
       "theme",
       "theme_request",
       "time_format",
-      "time_format_request"
+      "time_format_request",
+      "animation_frequency",
+      "animation_frequency_request",
+      "animation_duration",
+      "animation_duration_request"
     ],
     "resources": {
       "media": []
