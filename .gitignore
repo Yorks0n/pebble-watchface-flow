@@ -1,0 +1,10 @@
+build/
+.lock-waf_darwin_build
+*.pbw
+*.pbl
+*.bin
+*.elf
+*.o
+*.d
+*.png
+*.log
