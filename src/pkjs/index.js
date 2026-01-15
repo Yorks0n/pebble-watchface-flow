@@ -103,43 +103,7 @@ var clayConfig = [
   }
 ];
 
-var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
-
-var pendingConfig = false;
-var pendingTimer = null;
-
-function openConfig() {
-  Pebble.openURL(clay.generateUrl());
-}
-
-function requestThemeAndOpen() {
-  pendingConfig = true;
-  if (pendingTimer) {
-    clearTimeout(pendingTimer);
-  }
-  pendingTimer = setTimeout(function() {
-    pendingConfig = false;
-    openConfig();
-  }, 800);
-
-  Pebble.sendAppMessage({
-    theme_request: 1,
-    time_format_request: 1,
-    animation_frequency_request: 1,
-    animation_duration_request: 1
-  }, function() {}, function() {});
-}
-
-Pebble.addEventListener('showConfiguration', function() {
-  requestThemeAndOpen();
-});
-
-Pebble.addEventListener('webviewclosed', function(e) {
-  if (e && e.response) {
-    var settings = clay.getSettings(e.response);
-    Pebble.sendAppMessage(settings, function() {}, function() {});
-  }
-});
+var clay = new Clay(clayConfig);
 
 Pebble.addEventListener('appmessage', function(e) {
   if (!e || !e.payload) {

@@ -31,6 +31,9 @@
       "animation_duration",
       "animation_duration_request"
     ],
+    "capabilities": [
+      "configurable"
+    ],
     "resources": {
       "media": []
     }
