@@ -235,7 +235,7 @@ static void apply_theme(void) {
       break;
     case THEME_DUSK:
       s_background_color = GColorImperialPurple;
-      s_foreground_color = GColorRichBrilliantLavender;
+      s_foreground_color = GColorRajah;
       break;
     case THEME_DARK:
     default:
@@ -262,20 +262,12 @@ static void apply_theme(void) {
   }
 }
 
-static void send_theme_to_phone(void) {
+static void send_settings_to_phone(void) {
   DictionaryIterator *iter = NULL;
   if (app_message_outbox_begin(&iter) != APP_MSG_OK || !iter) {
     return;
   }
   dict_write_int(iter, MESSAGE_KEY_theme, &s_theme, sizeof(s_theme), true);
-  app_message_outbox_send();
-}
-
-static void send_time_format_to_phone(void) {
-  DictionaryIterator *iter = NULL;
-  if (app_message_outbox_begin(&iter) != APP_MSG_OK || !iter) {
-    return;
-  }
   dict_write_int(iter, MESSAGE_KEY_time_format, &s_time_format, sizeof(s_time_format), true);
   app_message_outbox_send();
 }
@@ -294,12 +286,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *theme_request_tuple = dict_find(iter, MESSAGE_KEY_theme_request);
   Tuple *time_format_tuple = dict_find(iter, MESSAGE_KEY_time_format);
   Tuple *time_format_request_tuple = dict_find(iter, MESSAGE_KEY_time_format_request);
-  if (theme_request_tuple) {
-    send_theme_to_phone();
-  }
-  if (time_format_request_tuple) {
-    send_time_format_to_phone();
-  }
+  const bool requested = theme_request_tuple || time_format_request_tuple;
+  bool did_update_theme = false;
+  bool did_update_time_format = false;
 
   if (theme_tuple) {
     int new_theme = prv_tuple_to_int(theme_tuple);
@@ -315,7 +304,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
 
     persist_write_int(PERSIST_KEY_THEME, s_theme);
     apply_theme();
-    send_theme_to_phone();
+    did_update_theme = true;
   }
 
   if (time_format_tuple) {
@@ -330,7 +319,11 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     if (s_canvas_layer) {
       layer_mark_dirty(s_canvas_layer);
     }
-    send_time_format_to_phone();
+    did_update_time_format = true;
+  }
+
+  if (requested || did_update_theme || did_update_time_format) {
+    send_settings_to_phone();
   }
 }
 
@@ -494,8 +487,7 @@ static void prv_init(void) {
   apply_theme();
   app_message_register_inbox_received(inbox_received_handler);
   app_message_open(64, 64);
-  send_theme_to_phone();
-  send_time_format_to_phone();
+  send_settings_to_phone();
 
   tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
 }

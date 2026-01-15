@@ -1,8 +1,8 @@
 {
   "name": "Flow",
-  "author": "MakeAwesomeHappen",
+  "author": "Yorks0n",
   "version": "1.0.0",
-  "keywords": ["pebble-app"],
+  "keywords": ["flow","wave","dynamic"],
   "private": true,
   "dependencies": {},
   "pebble": {
@@ -19,7 +19,7 @@
       "flint"
     ],
     "watchapp": {
-      "watchface": false
+      "watchface": true
     },
     "messageKeys": [
       "theme",
