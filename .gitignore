@@ -6,7 +6,6 @@ build/
 *.elf
 *.o
 *.d
-*.png
 *.log
 .cursor
 CLAUDE.md
