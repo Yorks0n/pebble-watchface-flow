@@ -74,6 +74,7 @@ var clayConfig = [
         messageKey: 'animation_frequency',
         label: 'Trigger frequency',
         defaultValue: 1,
+        description: 'Selecting Always On will significantly increase battery usage.',
         options: [
           { value: 0, label: 'Off' },
           { value: 1, label: 'Every minute' },
