@@ -9,3 +9,4 @@ build/
 *.log
 .cursor
 CLAUDE.md
+*.DS_Store

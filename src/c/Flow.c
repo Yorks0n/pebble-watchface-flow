@@ -132,7 +132,7 @@ static const DigitGlyph s_digit_glyphs[] = {
     } },
   // 5
   { .rows = {
-      "111111",
+      "011111",
       "111111",
       "110000",
       "110000",
