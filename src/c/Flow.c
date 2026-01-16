@@ -28,7 +28,7 @@ enum {
   kFps = 15,
   kSpatialPeriodMultiplier = 2,
   kGlyphRows = 10,
-  kGlyphSpacing = 1
+  kGlyphSpacingPx = 6
 };
 
 static int16_t s_line_count;
@@ -97,7 +97,7 @@ static const DigitGlyph s_digit_glyphs[] = {
   { .rows = {
       "011111",
       "111111",
-      "110011",
+      "110001",
       "000011",
       "000110",
       "001100",
@@ -108,7 +108,7 @@ static const DigitGlyph s_digit_glyphs[] = {
     } },
   // 3
   { .rows = {
-      "011100",
+      "011110",
       "111111",
       "110011",
       "000011",
@@ -199,16 +199,16 @@ static const DigitGlyph s_digit_glyphs[] = {
     } },
   // :
   { .rows = {
-      "0000",
-      "0000",
-      "0110",
-      "0110",
-      "0000",
-      "0000",
-      "0000",
-      "0000",
-      "0110",
-      "0110",
+      "00",
+      "00",
+      "11",
+      "11",
+      "00",
+      "00",
+      "00",
+      "00",
+      "11",
+      "11",
     } },
 };
 
@@ -473,6 +473,7 @@ static void prv_canvas_update_proc(Layer *layer, GContext *ctx) {
   }
 
   int16_t total_blocks = 0;
+  int16_t glyph_count = 0;
   const size_t time_len = strlen(s_time_text);
   for (size_t i = 0; i < time_len; i++) {
     const int glyph_index = prv_glyph_index(s_time_text[i]);
@@ -480,13 +481,12 @@ static void prv_canvas_update_proc(Layer *layer, GContext *ctx) {
       continue;
     }
     total_blocks += prv_glyph_width(&s_digit_glyphs[glyph_index]);
-    if (i + 1 < time_len) {
-      total_blocks += kGlyphSpacing;
-    }
+    glyph_count++;
   }
 
   const int16_t block_size = bounds.size.w > 192 ? 6 : 4;
-  const int16_t total_width = total_blocks * block_size;
+  const int16_t total_width = total_blocks * block_size +
+    (glyph_count > 1 ? (glyph_count - 1) * kGlyphSpacingPx : 0);
   const int16_t total_height = kGlyphRows * block_size;
   const int16_t origin_x = (bounds.size.w - total_width) / 2;
   const int16_t origin_y = (bounds.size.h - total_height) / 2;
@@ -511,7 +511,7 @@ static void prv_canvas_update_proc(Layer *layer, GContext *ctx) {
         }
       }
     }
-    cursor_x += (glyph_width + kGlyphSpacing) * block_size;
+    cursor_x += glyph_width * block_size + kGlyphSpacingPx;
   }
 }
 
