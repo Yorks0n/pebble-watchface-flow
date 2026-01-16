@@ -15,10 +15,12 @@ static int s_time_format;
 static int s_animation_frequency;
 static int s_animation_duration_sec;
 static int16_t s_animation_frames_remaining;
+static bool s_resume_always_on;
 
 static void prv_tick(void *context);
 static void prv_start_animation(void);
 static void prv_stop_animation(void);
+static void prv_start_load_animation(void);
 
 enum {
   kLineWidth = 2,
@@ -515,8 +517,13 @@ static void prv_canvas_update_proc(Layer *layer, GContext *ctx) {
 
 static void prv_tick(void *context) {
   if (s_animation_frames_remaining == 0) {
-    s_timer = NULL;
-    return;
+    if (s_resume_always_on) {
+      s_resume_always_on = false;
+      s_animation_frames_remaining = -1;
+    } else {
+      s_timer = NULL;
+      return;
+    }
   }
 
   s_phase += TRIG_MAX_ANGLE / 64;
@@ -528,6 +535,10 @@ static void prv_tick(void *context) {
   if (s_animation_frames_remaining > 0) {
     s_animation_frames_remaining--;
   }
+  if (s_animation_frames_remaining == 0 && s_resume_always_on) {
+    s_resume_always_on = false;
+    s_animation_frames_remaining = -1;
+  }
   if (s_animation_frames_remaining != 0) {
     s_timer = app_timer_register(1000 / kFps, prv_tick, NULL);
   } else {
@@ -536,6 +547,7 @@ static void prv_tick(void *context) {
 }
 
 static void prv_start_animation(void) {
+  s_resume_always_on = false;
   if (s_animation_duration_sec <= 0 && s_animation_frequency != ANIM_FREQ_ALWAYS_ON) {
     return;
   }
@@ -549,7 +561,19 @@ static void prv_start_animation(void) {
   }
 }
 
+static void prv_start_load_animation(void) {
+  if (s_animation_duration_sec <= 0) {
+    return;
+  }
+  s_resume_always_on = (s_animation_frequency == ANIM_FREQ_ALWAYS_ON);
+  s_animation_frames_remaining = s_animation_duration_sec * kFps;
+  if (!s_timer) {
+    s_timer = app_timer_register(1000 / kFps, prv_tick, NULL);
+  }
+}
+
 static void prv_stop_animation(void) {
+  s_resume_always_on = false;
   s_animation_frames_remaining = 0;
   if (s_timer) {
     app_timer_cancel(s_timer);
@@ -577,9 +601,7 @@ static void prv_window_load(Window *window) {
   struct tm *t = localtime(&now);
   prv_update_time(t);
   layer_mark_dirty(s_canvas_layer);
-  if (s_animation_frequency == ANIM_FREQ_ALWAYS_ON) {
-    prv_start_animation();
-  }
+  prv_start_load_animation();
 }
 
 static void prv_window_unload(Window *window) {
@@ -614,6 +636,7 @@ static void prv_init(void) {
     s_animation_duration_sec = 2;
   }
   s_animation_frames_remaining = 0;
+  s_resume_always_on = false;
 
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers) {
